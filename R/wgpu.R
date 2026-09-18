@@ -1,13 +1,13 @@
-#' Pairwise Euclidean or Haversine geodetic distance on GPU using wgpu
+#' Pairwise distance on GPU using wgpu (Euclidean, Haversine, S2 Chord, Vincenty Ellipsoid)
 #'
 #' @name st_distance_wgpu
 #' @param x object of class sf, sfc, sfg or numeric matrix of 2D points
 #' @param y optional second object
-#' @param geodetic logical; if TRUE, computes Haversine great-circle distance in meters for lon/lat points
-#' @param dylib_path optional path to librust_wgpu_sf.dylib
-#' @return A matrix of distances
+#' @param method character; one of "euclidean", "haversine" (cuSpatial/Sedona), "s2" (Google S2/sf default), or "vincenty" (WGS84 Spheroid)
+#' @param dylib_path optional path to compiled rust_wgpu_sf dynamic library
+#' @return A matrix of distances in meters (or CRS units for Euclidean)
 #' @export
-st_distance_wgpu <- function(x, y, geodetic = FALSE, dylib_path = NULL) {
+st_distance_wgpu <- function(x, y, method = NULL, dylib_path = NULL) {
   if (is.null(dylib_path)) {
     candidates <- c(
       file.path("src", "rust", "target", "release", "librust_wgpu_sf.dylib"),
@@ -24,9 +24,7 @@ st_distance_wgpu <- function(x, y, geodetic = FALSE, dylib_path = NULL) {
     stop("wgpu dynamic library not found. Run cargo build in src/rust first.")
   }
 
-  fn_name <- if (geodetic) "c_wgpu_haversine_matrix" else "c_wgpu_distance_matrix"
-
-  if (!is.loaded(fn_name)) {
+  if (!is.loaded("c_wgpu_compute")) {
     dyn.load(dylib_path)
   }
 
@@ -42,10 +40,19 @@ st_distance_wgpu <- function(x, y, geodetic = FALSE, dylib_path = NULL) {
     }
   }
 
-  # Auto-detect geodetic CRS if not specified
-  if (missing(geodetic) && inherits(x, c("sf", "sfc"))) {
-    geodetic <- isTRUE(sf::st_is_longlat(x))
+  # Auto-select method if NULL
+  is_ll <- if (inherits(x, c("sf", "sfc"))) isTRUE(sf::st_is_longlat(x)) else FALSE
+  if (is.null(method)) {
+    method <- if (is_ll) "s2" else "euclidean"
   }
+  method <- match.arg(tolower(method), c("euclidean", "haversine", "s2", "vincenty"))
+
+  method_code <- switch(method,
+    euclidean = 0L,
+    haversine = 1L,
+    s2 = 2L,
+    vincenty = 3L
+  )
 
   p1 <- extract_pts(x)
   p2 <- if (missing(y) || is.null(y)) p1 else extract_pts(y)
@@ -62,7 +69,8 @@ st_distance_wgpu <- function(x, y, geodetic = FALSE, dylib_path = NULL) {
   out_vec <- single(length = as.double(n1) * as.double(n2))
 
   res <- .C(
-    fn_name,
+    "c_wgpu_compute",
+    method = method_code,
     n1 = n1,
     pts1 = pts1_flat,
     n2 = n2,
