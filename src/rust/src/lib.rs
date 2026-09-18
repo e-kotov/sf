@@ -54,7 +54,7 @@ fn init_gpu() -> Option<GpuContext> {
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("sf_wgpu_device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
+                required_limits: adapter.limits(),
                 default_queue: wgpu::QueueDescriptor { label: None },
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::Performance,

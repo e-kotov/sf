@@ -21,3 +21,4 @@ nc.shx
 docs/
 tests/testthat/Rplots.pdf
 src/rust/target
+src/*.dylib
