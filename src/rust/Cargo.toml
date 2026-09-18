@@ -1,0 +1,16 @@
+[package]
+name = "rust_wgpu_sf"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wgpu = { path = "/Users/ek/tmp/wgpu/wgpu" }
+pollster = "1.0"
+bytemuck = { version = "1.25", features = ["derive"] }
+
+[profile.release]
+strip = false
+lto = false
