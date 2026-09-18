@@ -1,21 +1,20 @@
-#' Pairwise Euclidean distance matrix on GPU using wgpu (WebGPU/Metal/Vulkan)
+#' Pairwise Euclidean or Haversine geodetic distance on GPU using wgpu
 #'
 #' @name st_distance_wgpu
-#' @param x object of class \code{sf}, \code{sfc}, \code{sfg} or matrix/data.frame of 2D points
-#' @param y optional second object; if missing, pairwise distances within \code{x} are computed
-#' @param dylib_path optional path to the compiled rust_wgpu_sf dynamic library
-#' @return A matrix of Euclidean distances (in CRS units) with dimensions length(x) by length(y)
+#' @param x object of class sf, sfc, sfg or numeric matrix of 2D points
+#' @param y optional second object
+#' @param geodetic logical; if TRUE, computes Haversine great-circle distance in meters for lon/lat points
+#' @param dylib_path optional path to librust_wgpu_sf.dylib
+#' @return A matrix of distances
 #' @export
-st_distance_wgpu <- function(x, y, dylib_path = NULL) {
+st_distance_wgpu <- function(x, y, geodetic = FALSE, dylib_path = NULL) {
   if (is.null(dylib_path)) {
     candidates <- c(
-      file.path("src", "rust", "target", "debug", "librust_wgpu_sf.dylib"),
       file.path("src", "rust", "target", "release", "librust_wgpu_sf.dylib"),
-      file.path("src", "rust", "target", "debug", "librust_wgpu_sf.so"),
+      file.path("src", "rust", "target", "debug", "librust_wgpu_sf.dylib"),
       file.path("src", "rust", "target", "release", "librust_wgpu_sf.so"),
-      file.path("src", "rust", "target", "debug", "rust_wgpu_sf.dll"),
       file.path("src", "rust", "target", "release", "rust_wgpu_sf.dll"),
-      file.path("..", "src", "rust", "target", "debug", "librust_wgpu_sf.dylib"),
+      file.path("..", "src", "rust", "target", "release", "librust_wgpu_sf.dylib"),
       system.file("libs", "librust_wgpu_sf.dylib", package = "sf")
     )
     dylib_path <- candidates[file.exists(candidates)][1]
@@ -25,7 +24,9 @@ st_distance_wgpu <- function(x, y, dylib_path = NULL) {
     stop("wgpu dynamic library not found. Run cargo build in src/rust first.")
   }
 
-  if (!is.loaded("c_wgpu_distance_matrix")) {
+  fn_name <- if (geodetic) "c_wgpu_haversine_matrix" else "c_wgpu_distance_matrix"
+
+  if (!is.loaded(fn_name)) {
     dyn.load(dylib_path)
   }
 
@@ -37,16 +38,17 @@ st_distance_wgpu <- function(x, y, dylib_path = NULL) {
     } else if (is.matrix(obj) || is.data.frame(obj)) {
       as.matrix(obj)[, 1:2, drop = FALSE]
     } else {
-      stop("Unsupported object type for st_distance_wgpu")
+      stop("Unsupported object type")
     }
   }
 
-  p1 <- extract_pts(x)
-  if (missing(y) || is.null(y)) {
-    p2 <- p1
-  } else {
-    p2 <- extract_pts(y)
+  # Auto-detect geodetic CRS if not specified
+  if (missing(geodetic) && inherits(x, c("sf", "sfc"))) {
+    geodetic <- isTRUE(sf::st_is_longlat(x))
   }
+
+  p1 <- extract_pts(x)
+  p2 <- if (missing(y) || is.null(y)) p1 else extract_pts(y)
 
   n1 <- as.integer(nrow(p1))
   n2 <- as.integer(nrow(p2))
@@ -55,14 +57,12 @@ st_distance_wgpu <- function(x, y, dylib_path = NULL) {
     return(matrix(numeric(0), nrow = n1, ncol = n2))
   }
 
-  # Interleaved coordinates [x0, y0, x1, y1, ...] as single-precision float
   pts1_flat <- as.single(as.vector(t(p1)))
   pts2_flat <- as.single(as.vector(t(p2)))
-
   out_vec <- single(length = as.double(n1) * as.double(n2))
 
   res <- .C(
-    "c_wgpu_distance_matrix",
+    fn_name,
     n1 = n1,
     pts1 = pts1_flat,
     n2 = n2,

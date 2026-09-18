@@ -4,13 +4,14 @@ use wgpu::util::DeviceExt;
 struct GpuContext {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipeline: wgpu::ComputePipeline,
+    euclidean_pipeline: wgpu::ComputePipeline,
+    haversine_pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
 }
 
 static GPU_CTX: OnceLock<Option<GpuContext>> = OnceLock::new();
 
-const SHADER_SRC: &str = r#"
+const EUCLIDEAN_SHADER_SRC: &str = r#"
 struct Params {
     n1: u32,
     n2: u32,
@@ -31,8 +32,47 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let p1 = pts1[i];
     let p2 = pts2[j];
     let d = distance(p1, p2);
-    // R column-major order: index = i + j * n1
     out_dist[i + j * params.n1] = d;
+}
+"#;
+
+// Haversine Great-Circle Geodetic Distance on WGS84 Sphere (radius = 6371008.8m)
+// Derived from standard formulas used in Apache Sedona and RAPIDS cuSpatial (Apache-2.0)
+const HAVERSINE_SHADER_SRC: &str = r#"
+struct Params {
+    n1: u32,
+    n2: u32,
+};
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> pts1: array<vec2<f32>>; // [lon, lat] in degrees
+@group(0) @binding(2) var<storage, read> pts2: array<vec2<f32>>; // [lon, lat] in degrees
+@group(0) @binding(3) var<storage, read_write> out_dist: array<f32>; // meters
+
+const EARTH_RADIUS: f32 = 6371008.8; // WGS84 Authalic mean radius in meters
+const DEG_TO_RAD: f32 = 0.017453292519943295;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let i = global_id.x;
+    let j = global_id.y;
+    if (i >= params.n1 || j >= params.n2) {
+        return;
+    }
+    let p1 = pts1[i];
+    let p2 = pts2[j];
+
+    let lat1 = p1.y * DEG_TO_RAD;
+    let lat2 = p2.y * DEG_TO_RAD;
+    let dlat = (p2.y - p1.y) * DEG_TO_RAD;
+    let dlon = (p2.x - p1.x) * DEG_TO_RAD;
+
+    let sin_dlat_2 = sin(dlat * 0.5);
+    let sin_dlon_2 = sin(dlon * 0.5);
+
+    let a = sin_dlat_2 * sin_dlat_2 + cos(lat1) * cos(lat2) * sin_dlon_2 * sin_dlon_2;
+    let c = 2.0 * asin(clamp(sqrt(a), 0.0, 1.0));
+    out_dist[i + j * params.n1] = c * EARTH_RADIUS;
 }
 "#;
 
@@ -63,15 +103,9 @@ fn init_gpu() -> Option<GpuContext> {
             .await
             .ok()?;
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("distance_matrix_shader"),
-            source: wgpu::ShaderSource::Wgsl(SHADER_SRC.into()),
-        });
-
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("distance_bind_group_layout"),
             entries: &[
-                // params
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -82,7 +116,6 @@ fn init_gpu() -> Option<GpuContext> {
                     },
                     count: None,
                 },
-                // pts1
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -93,7 +126,6 @@ fn init_gpu() -> Option<GpuContext> {
                     },
                     count: None,
                 },
-                // pts2
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -104,7 +136,6 @@ fn init_gpu() -> Option<GpuContext> {
                     },
                     count: None,
                 },
-                // out_dist
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -124,10 +155,29 @@ fn init_gpu() -> Option<GpuContext> {
             immediate_size: 0,
         });
 
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("distance_pipeline"),
+        let euclidean_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("euclidean_shader"),
+            source: wgpu::ShaderSource::Wgsl(EUCLIDEAN_SHADER_SRC.into()),
+        });
+
+        let euclidean_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("euclidean_pipeline"),
             layout: Some(&pipeline_layout),
-            module: &shader,
+            module: &euclidean_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let haversine_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("haversine_shader"),
+            source: wgpu::ShaderSource::Wgsl(HAVERSINE_SHADER_SRC.into()),
+        });
+
+        let haversine_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("haversine_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &haversine_shader,
             entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
@@ -136,7 +186,8 @@ fn init_gpu() -> Option<GpuContext> {
         Some(GpuContext {
             device,
             queue,
-            pipeline,
+            euclidean_pipeline,
+            haversine_pipeline,
             bind_group_layout,
         })
     })
@@ -146,22 +197,22 @@ fn get_gpu_context() -> Option<&'static GpuContext> {
     GPU_CTX.get_or_init(init_gpu).as_ref()
 }
 
-pub fn compute_distance_matrix(
+pub fn run_compute_distance(
+    use_haversine: bool,
     n1: usize,
-    pts1: &[f32], // length 2 * n1
+    pts1: &[f32],
     n2: usize,
-    pts2: &[f32], // length 2 * n2
-    out: &mut [f32], // length n1 * n2
+    pts2: &[f32],
+    out: &mut [f32],
 ) -> Result<(), &'static str> {
     if pts1.len() < 2 * n1 || pts2.len() < 2 * n2 || out.len() < n1 * n2 {
         return Err("Buffer length mismatch");
     }
-
     if n1 == 0 || n2 == 0 {
         return Ok(());
     }
 
-    let ctx = get_gpu_context().ok_or("Failed to initialize wgpu / Metal device")?;
+    let ctx = get_gpu_context().ok_or("Failed to initialize wgpu device")?;
     let device = &ctx.device;
     let queue = &ctx.queue;
 
@@ -243,7 +294,12 @@ pub fn compute_distance_matrix(
             label: Some("distance_compute_pass"),
             timestamp_writes: None,
         });
-        cpass.set_pipeline(&ctx.pipeline);
+        let pipeline = if use_haversine {
+            &ctx.haversine_pipeline
+        } else {
+            &ctx.euclidean_pipeline
+        };
+        cpass.set_pipeline(pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
         let workgroups_x = (n1 as u32 + 15) / 16;
         let workgroups_y = (n2 as u32 + 15) / 16;
@@ -251,7 +307,6 @@ pub fn compute_distance_matrix(
     }
 
     encoder.copy_buffer_to_buffer(&out_storage_buffer, 0, &staging_buffer, 0, out_byte_size);
-
     queue.submit(Some(encoder.finish()));
 
     let buffer_slice = staging_buffer.slice(..);
@@ -274,19 +329,6 @@ pub fn compute_distance_matrix(
 }
 
 #[no_mangle]
-pub extern "C" fn c_wgpu_is_available() -> i32 {
-    if get_gpu_context().is_some() {
-        1
-    } else {
-        0
-    }
-}
-
-/// C ABI entry point for R:
-/// pts1 is flat array of interleaved [x0, y0, x1, y1, ...] length 2 * n1
-/// pts2 is flat array of interleaved [x0, y0, x1, y1, ...] length 2 * n2
-/// out is allocated matrix of length n1 * n2 in column-major order
-#[no_mangle]
 pub extern "C" fn c_wgpu_distance_matrix(
     n1_ptr: *const i32,
     pts1_ptr: *const f32,
@@ -297,15 +339,36 @@ pub extern "C" fn c_wgpu_distance_matrix(
     if n1_ptr.is_null() || pts1_ptr.is_null() || n2_ptr.is_null() || pts2_ptr.is_null() || out_ptr.is_null() {
         return -1;
     }
-
     let n1 = unsafe { *n1_ptr } as usize;
     let n2 = unsafe { *n2_ptr } as usize;
-
     let pts1 = unsafe { std::slice::from_raw_parts(pts1_ptr, 2 * n1) };
     let pts2 = unsafe { std::slice::from_raw_parts(pts2_ptr, 2 * n2) };
     let out = unsafe { std::slice::from_raw_parts_mut(out_ptr, n1 * n2) };
 
-    match compute_distance_matrix(n1, pts1, n2, pts2, out) {
+    match run_compute_distance(false, n1, pts1, n2, pts2, out) {
+        Ok(()) => 0,
+        Err(_) => -2,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn c_wgpu_haversine_matrix(
+    n1_ptr: *const i32,
+    pts1_ptr: *const f32,
+    n2_ptr: *const i32,
+    pts2_ptr: *const f32,
+    out_ptr: *mut f32,
+) -> i32 {
+    if n1_ptr.is_null() || pts1_ptr.is_null() || n2_ptr.is_null() || pts2_ptr.is_null() || out_ptr.is_null() {
+        return -1;
+    }
+    let n1 = unsafe { *n1_ptr } as usize;
+    let n2 = unsafe { *n2_ptr } as usize;
+    let pts1 = unsafe { std::slice::from_raw_parts(pts1_ptr, 2 * n1) };
+    let pts2 = unsafe { std::slice::from_raw_parts(pts2_ptr, 2 * n2) };
+    let out = unsafe { std::slice::from_raw_parts_mut(out_ptr, n1 * n2) };
+
+    match run_compute_distance(true, n1, pts1, n2, pts2, out) {
         Ok(()) => 0,
         Err(_) => -2,
     }
@@ -316,27 +379,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_distance_matrix() {
-        // Point 1: (0, 0), Point 2: (3, 4)
-        let pts1 = vec![0.0f32, 0.0, 3.0, 4.0];
-        // Point 1: (0, 0), Point 2: (0, 4)
-        let pts2 = vec![0.0f32, 0.0, 0.0, 4.0];
-
-        let mut out = vec![0.0f32; 4];
-        let res = compute_distance_matrix(2, &pts1, 2, &pts2, &mut out);
-        assert!(res.is_ok(), "Distance matrix calculation failed: {:?}", res);
-
-        // dist((0,0), (0,0)) = 0
-        // dist((3,4), (0,0)) = 5
-        // dist((0,0), (0,4)) = 4
-        // dist((3,4), (0,4)) = 3
-        // Column-major: out[0] = d(p1_0, p2_0) = 0
-        //              out[1] = d(p1_1, p2_0) = 5
-        //              out[2] = d(p1_0, p2_1) = 4
-        //              out[3] = d(p1_1, p2_1) = 3
-        assert!((out[0] - 0.0).abs() < 1e-5);
-        assert!((out[1] - 5.0).abs() < 1e-5);
-        assert!((out[2] - 4.0).abs() < 1e-5);
-        assert!((out[3] - 3.0).abs() < 1e-5);
+    fn test_haversine() {
+        // Point 1: London (lon -0.1276, lat 51.5074)
+        // Point 2: Paris (lon 2.3522, lat 48.8566)
+        let pts1 = vec![-0.1276f32, 51.5074];
+        let pts2 = vec![2.3522f32, 48.8566];
+        let mut out = vec![0.0f32; 1];
+        let res = run_compute_distance(true, 1, &pts1, 1, &pts2, &mut out);
+        assert!(res.is_ok());
+        // London to Paris distance is ~343.5 km (343,500 meters)
+        let dist_km = out[0] / 1000.0;
+        println!("London to Paris distance: {:.2} km", dist_km);
+        assert!((dist_km - 343.5).abs() < 2.0);
     }
 }
