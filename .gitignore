@@ -20,3 +20,4 @@ nc.dbf
 nc.shx
 docs/
 tests/testthat/Rplots.pdf
+src/rust/target

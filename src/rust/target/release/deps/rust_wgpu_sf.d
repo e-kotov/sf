@@ -1,7 +1,0 @@
-/Users/ek/tmp/sf/src/rust/target/release/deps/rust_wgpu_sf.d: src/lib.rs
-
-/Users/ek/tmp/sf/src/rust/target/release/deps/librust_wgpu_sf.dylib: src/lib.rs
-
-/Users/ek/tmp/sf/src/rust/target/release/deps/librust_wgpu_sf.rlib: src/lib.rs
-
-src/lib.rs:
