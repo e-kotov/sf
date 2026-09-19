@@ -5,6 +5,27 @@ suppressPackageStartupMessages({
 	library(sf)
 })
 
+# Locate sf source root
+args = commandArgs(trailingOnly = FALSE)
+file_arg = grep("^--file=", args, value = TRUE)
+script_path = if (length(file_arg)) sub("^--file=", "", file_arg) else "inst/benchmarks/gwdg_hpc_benchmark.R"
+sf_root = normalizePath(file.path(dirname(script_path), "..", ".."))
+
+# Source new GPU acceleration modules
+source(file.path(sf_root, "R", "gpu_detect.R"))
+source(file.path(sf_root, "R", "gpu_routing.R"))
+source(file.path(sf_root, "R", "cuspatial.R"))
+source(file.path(sf_root, "R", "geom-measures.R"))
+
+# Compile and load bridge if not already loaded
+bridge_so = file.path(sf_root, "src", "cuspatial_bridge.so")
+if (!file.exists(bridge_so)) {
+	system(paste("cd", file.path(sf_root, "src"), "&& R CMD SHLIB cuspatial_bridge.cpp"))
+}
+if (file.exists(bridge_so)) {
+	tryCatch(dyn.load(bridge_so), error = function(e) NULL)
+}
+
 cat("================================================================\n")
 cat("       sf GPU Acceleration Benchmarking Matrix (GWDG HPC)       \n")
 cat("================================================================\n\n")
