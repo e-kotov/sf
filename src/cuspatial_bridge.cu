@@ -2,15 +2,6 @@
 
 #include "cuspatial_bridge.h"
 #include <cuda_runtime.h>
-#include <cuspatial/distance.cuh>
-#include <cuspatial/point_in_polygon.cuh>
-#include <cuspatial/spatial_join.cuh>
-#include <cuspatial/point_quadtree.cuh>
-#include <cuspatial/projection.cuh>
-#include <rmm/cuda_stream_view.hpp>
-#include <rmm/device_uvector.hpp>
-#include <rmm/mr/device/cuda_memory_resource.hpp>
-#include <thrust/device_vector.h>
 #include <vector>
 
 // Helper macro for CUDA errors
