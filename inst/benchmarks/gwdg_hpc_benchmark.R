@@ -16,6 +16,8 @@ source(file.path(sf_root, "R", "gpu_detect.R"))
 source(file.path(sf_root, "R", "gpu_routing.R"))
 source(file.path(sf_root, "R", "cuspatial.R"))
 source(file.path(sf_root, "R", "geom-measures.R"))
+environment(st_distance) <- asNamespace("sf")
+assignInNamespace("st_distance", st_distance, ns = "sf")
 
 # Compile and load bridge if not already loaded
 bridge_so = file.path(sf_root, "src", "cuspatial_bridge.so")
