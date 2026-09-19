@@ -45,7 +45,7 @@ sf_gpu_threshold = function(op = c("distance", "pip", "join", "transform"), valu
 	op = match.arg(op)
 	opt_name = paste0("sf_gpu_threshold_", op)
 	default_thresholds = c(
-		distance = 50000,    # 50k pairs (e.g. 225 x 225)
+		distance = 25000,    # 25k pairs (calibrated empirically on A100 HPC: 19x-24x speedup at 250k, break-even at 10k-20k)
 		pip = 5000,          # 5,000 points against polygons
 		join = 5000,         # 5,000 points in spatial join
 		transform = 20000    # 20,000 coordinate pairs
