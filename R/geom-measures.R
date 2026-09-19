@@ -179,13 +179,19 @@ st_distance = function(x, y, ..., dist_fun, by_element = FALSE,
 	if (!by_element && inherits(x, "sfc_POINT") && inherits(y, "sfc_POINT") && 
 		sf_should_use_gpu("distance", as.numeric(length(x)) * as.numeric(length(y)))) {
 		backend = getOption("sf_gpu_backend", default = "auto")
+		if (backend == "auto") {
+			backend = sf_detect_gpu()$backend
+		}
 		is_longlat = isTRUE(st_is_longlat(x))
 		res = NULL
 
 		if (backend == "cuspatial") {
 			tryCatch({
 				res = st_distance_cuspatial(x, y, method = if (is_longlat) "haversine" else "euclidean")
-			}, error = function(e) NULL)
+			}, error = function(e) {
+				message(paste("cuSpatial execution error:", e$message))
+				NULL
+			})
 		} else if (backend == "metal" && !is_longlat && exists("st_distance_metal", mode = "function")) {
 			tryCatch({
 				res = st_distance_metal(x, y)

@@ -18,14 +18,13 @@ source(file.path(sf_root, "R", "cuspatial.R"))
 source(file.path(sf_root, "R", "geom-measures.R"))
 environment(st_distance) <- asNamespace("sf")
 assignInNamespace("st_distance", st_distance, ns = "sf")
+environment(st_distance.sfc) <- asNamespace("sf")
+assignInNamespace("st_distance.sfc", st_distance.sfc, ns = "sf")
 
-# Compile and load bridge if not already loaded
+# Load compiled bridge
 bridge_so = file.path(sf_root, "src", "cuspatial_bridge.so")
-if (!file.exists(bridge_so)) {
-	system(paste("cd", file.path(sf_root, "src"), "&& R CMD SHLIB cuspatial_bridge.cpp"))
-}
 if (file.exists(bridge_so)) {
-	tryCatch(dyn.load(bridge_so), error = function(e) NULL)
+	tryCatch(dyn.load(bridge_so), error = function(e) cat("Error loading bridge:", e$message, "\n"))
 }
 
 cat("================================================================\n")
