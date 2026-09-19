@@ -27,7 +27,11 @@ sf_detect_gpu = function() {
 	tryCatch({
 		cuda_count = .Call("c_cuda_device_count", PACKAGE = "sf")
 	}, error = function(e) {
-		# Fallback if symbol not yet registered
+		tryCatch({
+			cuda_count <<- .Call("c_cuda_device_count")
+		}, error = function(e2) {
+			cuda_count <<- 0
+		})
 	})
 	if (cuda_count > 0) {
 		details$cuda = TRUE

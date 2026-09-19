@@ -21,6 +21,47 @@
     } \
 } while(0)
 
+__device__ inline float haversine_dist(float lon1, float lat1, float lon2, float lat2) {
+    const float R = 6371008.8f; // Earth authalic radius in meters
+    const float DEG_TO_RAD = 0.017453292519943295f;
+    float phi1 = lat1 * DEG_TO_RAD;
+    float phi2 = lat2 * DEG_TO_RAD;
+    float dphi = (lat2 - lat1) * DEG_TO_RAD;
+    float dlam = (lon2 - lon1) * DEG_TO_RAD;
+    float a = sinf(dphi * 0.5f) * sinf(dphi * 0.5f) +
+              cosf(phi1) * cosf(phi2) * sinf(dlam * 0.5f) * sinf(dlam * 0.5f);
+    float c = 2.0f * atan2f(sqrtf(a), sqrtf(fmaxf(0.0f, 1.0f - a)));
+    return R * c;
+}
+
+__device__ inline float euclidean_dist(float x1, float y1, float x2, float y2) {
+    float dx = x1 - x2;
+    float dy = y1 - y2;
+    return sqrtf(dx * dx + dy * dy);
+}
+
+__global__ void pairwise_distance_kernel(
+    const float* __restrict__ x_lon,
+    const float* __restrict__ x_lat,
+    const float* __restrict__ y_lon,
+    const float* __restrict__ y_lat,
+    float* __restrict__ out,
+    int n_x,
+    int n_y,
+    int geodetic
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < n_x && j < n_y) {
+        size_t idx = static_cast<size_t>(i) + static_cast<size_t>(j) * static_cast<size_t>(n_x);
+        if (geodetic) {
+            out[idx] = haversine_dist(x_lon[i], x_lat[i], y_lon[j], y_lat[j]);
+        } else {
+            out[idx] = euclidean_dist(x_lon[i], x_lat[i], y_lon[j], y_lat[j]);
+        }
+    }
+}
+
 extern "C" {
 
 SEXP c_cuda_device_count() {
@@ -80,10 +121,14 @@ SEXP c_cuspatial_distance(SEXP x_coords, SEXP y_coords, SEXP is_geodetic) {
     // Launch cuSpatial distance kernel
     cudaStream_t stream;
     CUDA_CHECK(cudaStreamCreate(&stream));
-    rmm::cuda_stream_view stream_view(stream);
     
-    // If geodetic, use Haversine; otherwise Euclidean distance
-    // (Pairwise grid expansion kernel)
+    dim3 block(16, 16);
+    dim3 grid((n_x + 15) / 16, (n_y + 15) / 16);
+    pairwise_distance_kernel<<<grid, block, 0, stream>>>(
+        d_x_lon, d_x_lat, d_y_lon, d_y_lat, d_out, n_x, n_y, geodetic
+    );
+    CUDA_CHECK(cudaGetLastError());
+    
     // Synchronize stream
     CUDA_CHECK(cudaStreamSynchronize(stream));
     CUDA_CHECK(cudaStreamDestroy(stream));
