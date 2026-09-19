@@ -37,6 +37,16 @@ pathGrob <- NULL
 	if ((s2 <- Sys.getenv("_SF_USE_S2")) != "")
 		options(sf_use_s2 = s2 != "false")
 	FULL_bbox_ <<- st_set_crs(FULL_bbox_, "OGC:CRS84")
+	
+	# GPU Detection & Auto-Configuration
+	gpu_info = sf_detect_gpu()
+	env_gpu = Sys.getenv("_SF_USE_GPU")
+	if (env_gpu != "") {
+		options(sf_use_gpu = env_gpu != "false")
+	} else {
+		options(sf_use_gpu = isTRUE(gpu_info$has_gpu))
+	}
+	options(sf_gpu_backend = gpu_info$backend)
 }
 
 .onUnload = function(libname, pkgname) {
@@ -44,9 +54,15 @@ pathGrob <- NULL
 }
 
 .onAttach = function(libname, pkgname) {
+	gpu_status = if (isTRUE(getOption("sf_use_gpu", default = FALSE))) {
+		paste0("TRUE (", getOption("sf_gpu_backend", default = "auto"), ")")
+	} else {
+		"FALSE"
+	}
 	m = paste0("Linking to GEOS ", strsplit(CPL_geos_version(TRUE), "-")[[1]][1],
 		", GDAL ", CPL_gdal_version(), ", PROJ ", CPL_proj_version(),
-		"; sf_use_s2() is ", sf_use_s2())
+		"; sf_use_s2() is ", sf_use_s2(),
+		"; sf_use_gpu() is ", gpu_status)
 	m = strwrap(m, width = getOption("width"))
 	packageStartupMessage(paste0(m, collapse = "\n"))
 	if (length(grep(CPL_geos_version(FALSE, TRUE), CPL_geos_version(TRUE))) != 1) { # nocov start

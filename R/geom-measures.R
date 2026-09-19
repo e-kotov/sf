@@ -175,6 +175,38 @@ st_distance = function(x, y, ..., dist_fun, by_element = FALSE,
 	if (by_element)
 		stopifnot(!missing_y, length(x) == length(y))
 
+	# Automatic GPU Routing
+	if (!by_element && inherits(x, "sfc_POINT") && inherits(y, "sfc_POINT") && 
+		sf_should_use_gpu("distance", as.numeric(length(x)) * as.numeric(length(y)))) {
+		backend = getOption("sf_gpu_backend", default = "auto")
+		is_longlat = isTRUE(st_is_longlat(x))
+		res = NULL
+
+		if (backend == "cuspatial") {
+			tryCatch({
+				res = st_distance_cuspatial(x, y, method = if (is_longlat) "haversine" else "euclidean")
+			}, error = function(e) NULL)
+		} else if (backend == "metal" && !is_longlat && exists("st_distance_metal", mode = "function")) {
+			tryCatch({
+				res = st_distance_metal(x, y)
+			}, error = function(e) NULL)
+		} else if (exists("st_distance_wgpu", mode = "function")) {
+			tryCatch({
+				res = st_distance_wgpu(x, y, method = if (is_longlat) (if (sf_use_s2()) "s2" else "vincenty") else "euclidean")
+			}, error = function(e) NULL)
+		}
+
+		if (!is.null(res)) {
+			if (is_longlat) {
+				return(set_units(res, "m", mode = "standard"))
+			} else {
+				if (!is.null(u <- st_crs(x)$ud_unit))
+					units(res) = u
+				return(res)
+			}
+		}
+	}
+
 	if (isTRUE(st_is_longlat(x)) && which == "Great Circle") {
 		if (sf_use_s2()) {
 			ret = if (by_element)
