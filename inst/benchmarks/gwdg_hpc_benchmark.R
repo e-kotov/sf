@@ -14,17 +14,20 @@ sf_root = normalizePath(file.path(dirname(script_path), "..", ".."))
 # Source new GPU acceleration modules
 source(file.path(sf_root, "R", "gpu_detect.R"))
 source(file.path(sf_root, "R", "gpu_routing.R"))
-source(file.path(sf_root, "R", "cuspatial.R"))
+source(file.path(sf_root, "R", "cuda.R"))
 source(file.path(sf_root, "R", "geom-measures.R"))
 environment(st_distance) <- asNamespace("sf")
 assignInNamespace("st_distance", st_distance, ns = "sf")
 
 # Load compiled bridge
-bridge_so = file.path(sf_root, "src", "cuspatial_bridge.so")
+bridge_so = file.path(sf_root, "src", "cuda_bridge.so")
+if (!file.exists(bridge_so)) {
+	bridge_so = file.path(sf_root, "src", "cuspatial_bridge.so")
+}
 if (file.exists(bridge_so)) {
 	tryCatch(dyn.load(bridge_so), error = function(e) cat("Error loading bridge:", e$message, "\n"))
 }
-sf_gpu_backend("cuspatial")
+sf_gpu_backend("cuda")
 
 cat("================================================================\n")
 cat("       sf GPU Acceleration Benchmarking Matrix (GWDG HPC)       \n")

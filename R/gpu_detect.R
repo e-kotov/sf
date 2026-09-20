@@ -1,6 +1,6 @@
 #' Detect available GPU acceleration backends
 #'
-#' Probes the runtime environment for NVIDIA CUDA (cuSpatial), Apple Silicon Metal,
+#' Probes the runtime environment for NVIDIA CUDA, Apple Silicon Metal,
 #' and cross-platform WebGPU (wgpu).
 #'
 #' @return A list containing `has_gpu` (logical), `backend` (character), and `details` (list).
@@ -22,7 +22,7 @@ sf_detect_gpu = function() {
 		}
 	}
 
-	# 2. Probe NVIDIA CUDA (cuSpatial)
+	# 2. Probe NVIDIA CUDA
 	cuda_count = 0
 	tryCatch({
 		cuda_count = .Call("c_cuda_device_count", PACKAGE = "sf")
@@ -36,7 +36,7 @@ sf_detect_gpu = function() {
 	if (cuda_count > 0) {
 		details$cuda = TRUE
 		has_gpu = TRUE
-		backend = "cuspatial"
+		backend = "cuda"
 		details$device_name = paste0("NVIDIA CUDA GPU (", cuda_count, " device", if (cuda_count > 1) "s" else "", ")")
 	}
 

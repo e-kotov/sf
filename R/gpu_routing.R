@@ -22,12 +22,13 @@ sf_use_gpu = function(use_gpu, force = FALSE) {
 
 #' Query or set active GPU backend
 #'
-#' @param backend character; one of "auto", "cuspatial", "metal", "wgpu", "cpu".
+#' @param backend character; one of "auto", "cuda", "metal", "wgpu", "cpu".
 #' @export
 sf_gpu_backend = function(backend) {
 	cur = getOption("sf_gpu_backend", default = "auto")
 	if (!missing(backend)) {
-		valid = c("auto", "cuspatial", "metal", "wgpu", "cpu")
+		if (identical(backend, "cuspatial")) backend = "cuda"
+		valid = c("auto", "cuda", "metal", "wgpu", "cpu")
 		stopifnot(backend %in% valid)
 		options(sf_gpu_backend = backend)
 		invisible(cur)

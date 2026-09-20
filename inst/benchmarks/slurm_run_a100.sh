@@ -1,13 +1,14 @@
 #!/bin/bash
-#SBATCH -p gpu
-#SBATCH -G a100:1
-#SBATCH -t 01:00:00
+#SBATCH --account=scc_mrdf_all
+#SBATCH --partition=scc-gpu
+#SBATCH --gres=gpu:A100:1
+#SBATCH --time=01:00:00
 #SBATCH --mem=64G
-#SBATCH -J sf_cuspatial_benchmark
-#SBATCH -o sf_cuspatial_bench_%j.out
-#SBATCH -e sf_cuspatial_bench_%j.err
+#SBATCH --job-name=sf_cuda_benchmark
+#SBATCH --output=.ws_storage/logs/slurm/%x-%j.out
+#SBATCH --wckey=sf-gpu
 
-echo "=== Running sf cuSpatial GPU Benchmark on GWDG HPC ==="
+echo "=== Running sf CUDA GPU Benchmark on GWDG HPC ==="
 date
 hostname
 nvidia-smi

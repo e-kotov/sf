@@ -1,29 +1,29 @@
-#' Compute pairwise distances using NVIDIA cuSpatial
+#' Compute pairwise distances using NVIDIA CUDA
 #'
 #' @param x sf or sfc object
 #' @param y sf or sfc object (optional)
 #' @param method "euclidean" or "haversine"
 #' @return numeric matrix of pairwise distances
 #' @export
-st_distance_cuspatial = function(x, y, method = c("euclidean", "haversine")) {
+st_distance_cuda = function(x, y, method = c("euclidean", "haversine")) {
 	if (missing(y)) y = x
 	method = match.arg(method)
 	coords_x = st_coordinates(x)
 	coords_y = st_coordinates(y)
 	is_geodetic = (method == "haversine")
 	tryCatch(
-		.Call("c_cuspatial_distance", coords_x, coords_y, as.logical(is_geodetic), PACKAGE = "sf"),
-		error = function(e) .Call("c_cuspatial_distance", coords_x, coords_y, as.logical(is_geodetic))
+		.Call("c_cuda_distance", coords_x, coords_y, as.logical(is_geodetic), PACKAGE = "sf"),
+		error = function(e) .Call("c_cuda_distance", coords_x, coords_y, as.logical(is_geodetic))
 	)
 }
 
-#' Test Point-in-Polygon containment using NVIDIA cuSpatial
+#' Test Point-in-Polygon containment using NVIDIA CUDA
 #'
 #' @param points sf or sfc_POINT object
 #' @param polygons sf or sfc_POLYGON/MULTIPOLYGON object
 #' @return logical matrix (points x polygons) or integer bitmask
 #' @export
-st_pip_cuspatial = function(points, polygons) {
+st_pip_cuda = function(points, polygons) {
 	pt_coords = st_coordinates(points)
 	# Flatten polygon rings into contiguous coordinate array and offset vectors
 	poly_coords = st_coordinates(polygons)
@@ -31,7 +31,7 @@ st_pip_cuspatial = function(points, polygons) {
 	ring_offsets = as.integer(c(0, nrow(poly_coords)))
 	
 	tryCatch(
-		.Call("c_cuspatial_pip",
+		.Call("c_cuda_pip",
 			as.numeric(pt_coords[, 1]),
 			as.numeric(pt_coords[, 2]),
 			poly_offsets,
@@ -40,7 +40,7 @@ st_pip_cuspatial = function(points, polygons) {
 			as.numeric(poly_coords[, 2]),
 			PACKAGE = "sf"
 		),
-		error = function(e) .Call("c_cuspatial_pip",
+		error = function(e) .Call("c_cuda_pip",
 			as.numeric(pt_coords[, 1]),
 			as.numeric(pt_coords[, 2]),
 			poly_offsets,
@@ -51,31 +51,34 @@ st_pip_cuspatial = function(points, polygons) {
 	)
 }
 
-#' Spatial Join using NVIDIA cuSpatial Quadtree
+#' Spatial Join using NVIDIA CUDA
 #'
 #' @param points sf object with POINT geometries
 #' @param polygons sf object with POLYGON geometries
 #' @return joined sf object
 #' @export
-st_join_cuspatial = function(points, polygons) {
-	# Compute quadtree-indexed spatial join on GPU
-	hits = st_pip_cuspatial(points, polygons)
-	# Index matching rows in R
+st_join_cuda = function(points, polygons) {
+	hits = st_pip_cuda(points, polygons)
 	points
 }
 
-#' Coordinate transformation using NVIDIA cuProj
+#' Coordinate transformation using NVIDIA CUDA
 #'
 #' @param x sf or sfc object
 #' @param crs target CRS
 #' @return transformed sf or sfc object
 #' @export
-st_transform_cuspatial = function(x, crs) {
+st_transform_cuda = function(x, crs) {
 	coords = st_coordinates(x)
-	# Invoke cuproj C API
 	res_coords = tryCatch(
-		.Call("c_cuproj_transform", as.numeric(coords[, 1]), as.numeric(coords[, 2]), 1L, numeric(0), PACKAGE = "sf"),
-		error = function(e) .Call("c_cuproj_transform", as.numeric(coords[, 1]), as.numeric(coords[, 2]), 1L, numeric(0))
+		.Call("c_cuda_transform", as.numeric(coords[, 1]), as.numeric(coords[, 2]), 1L, numeric(0), PACKAGE = "sf"),
+		error = function(e) .Call("c_cuda_transform", as.numeric(coords[, 1]), as.numeric(coords[, 2]), 1L, numeric(0))
 	)
 	st_set_geometry(x, st_sfc(lapply(seq_len(nrow(res_coords)), function(i) st_point(res_coords[i, ])), crs = crs))
 }
+
+# Backward-compatibility aliases
+st_distance_cuspatial = st_distance_cuda
+st_pip_cuspatial = st_pip_cuda
+st_join_cuspatial = st_join_cuda
+st_transform_cuspatial = st_transform_cuda

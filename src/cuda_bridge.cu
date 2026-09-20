@@ -1,6 +1,6 @@
-#ifdef HAVE_CUSPATIAL
+#ifdef HAVE_CUDA
 
-#include "cuspatial_bridge.h"
+#include "cuda_bridge.h"
 #include <cuda_runtime.h>
 #include <vector>
 
@@ -67,7 +67,7 @@ SEXP c_cuda_device_count() {
     return res;
 }
 
-SEXP c_cuspatial_distance(SEXP x_coords, SEXP y_coords, SEXP is_geodetic) {
+SEXP c_cuda_distance(SEXP x_coords, SEXP y_coords, SEXP is_geodetic) {
     SEXP x_dim = getAttrib(x_coords, R_DimSymbol);
     SEXP y_dim = getAttrib(y_coords, R_DimSymbol);
     if (isNull(x_dim) || isNull(y_dim)) {
@@ -109,7 +109,7 @@ SEXP c_cuspatial_distance(SEXP x_coords, SEXP y_coords, SEXP is_geodetic) {
     CUDA_CHECK(cudaMemcpy(d_y_lon, h_y_lon.data(), n_y * sizeof(float), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_y_lat, h_y_lat.data(), n_y * sizeof(float), cudaMemcpyHostToDevice));
     
-    // Launch cuSpatial distance kernel
+    // Launch CUDA distance kernel
     cudaStream_t stream;
     CUDA_CHECK(cudaStreamCreate(&stream));
     
@@ -145,7 +145,7 @@ SEXP c_cuspatial_distance(SEXP x_coords, SEXP y_coords, SEXP is_geodetic) {
     return res;
 }
 
-SEXP c_cuspatial_pip(SEXP pt_x, SEXP pt_y, SEXP poly_offsets, SEXP ring_offsets, SEXP poly_x, SEXP poly_y) {
+SEXP c_cuda_pip(SEXP pt_x, SEXP pt_y, SEXP poly_offsets, SEXP ring_offsets, SEXP poly_x, SEXP poly_y) {
     int num_pts = length(pt_x);
     int num_rings = length(ring_offsets);
     int num_poly_pts = length(poly_x);
@@ -162,10 +162,7 @@ SEXP c_cuspatial_pip(SEXP pt_x, SEXP pt_y, SEXP poly_offsets, SEXP ring_offsets,
     CUDA_CHECK(cudaMalloc(&d_poly_y, num_poly_pts * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_out, num_pts * sizeof(int)));
     
-    // Copy data from R to GPU
-    // ...
-    // Execute cuspatial::point_in_polygon
-    
+    // Free device buffers (stub)
     cudaFree(d_px);
     cudaFree(d_py);
     cudaFree(d_poly_off);
@@ -179,20 +176,26 @@ SEXP c_cuspatial_pip(SEXP pt_x, SEXP pt_y, SEXP poly_offsets, SEXP ring_offsets,
     return res;
 }
 
-SEXP c_cuspatial_quadtree_join(SEXP pt_x, SEXP pt_y, SEXP poly_offsets, SEXP ring_offsets, SEXP poly_x, SEXP poly_y) {
+SEXP c_cuda_quadtree_join(SEXP pt_x, SEXP pt_y, SEXP poly_offsets, SEXP ring_offsets, SEXP poly_x, SEXP poly_y) {
     // Quadtree construction on points + spatial join
     SEXP res = PROTECT(allocVector(VECSXP, 2));
     UNPROTECT(1);
     return res;
 }
 
-SEXP c_cuproj_transform(SEXP in_x, SEXP in_y, SEXP proj_type, SEXP params) {
+SEXP c_cuda_transform(SEXP in_x, SEXP in_y, SEXP proj_type, SEXP params) {
     int n = length(in_x);
     SEXP res = PROTECT(allocMatrix(REALSXP, n, 2));
     UNPROTECT(1);
     return res;
 }
 
+// Backward-compatibility aliases
+SEXP c_cuspatial_distance(SEXP x, SEXP y, SEXP g) { return c_cuda_distance(x, y, g); }
+SEXP c_cuspatial_pip(SEXP a, SEXP b, SEXP c, SEXP d, SEXP e, SEXP f) { return c_cuda_pip(a, b, c, d, e, f); }
+SEXP c_cuspatial_quadtree_join(SEXP a, SEXP b, SEXP c, SEXP d, SEXP e, SEXP f) { return c_cuda_quadtree_join(a, b, c, d, e, f); }
+SEXP c_cuproj_transform(SEXP a, SEXP b, SEXP c, SEXP d) { return c_cuda_transform(a, b, c, d); }
+
 } // extern "C"
 
-#endif // HAVE_CUSPATIAL
+#endif // HAVE_CUDA

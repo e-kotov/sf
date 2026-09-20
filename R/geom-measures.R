@@ -185,11 +185,11 @@ st_distance = function(x, y, ..., dist_fun, by_element = FALSE,
 		is_longlat = isTRUE(st_is_longlat(x))
 		res = NULL
 
-		if (backend == "cuspatial") {
+		if (backend %in% c("cuda", "cuspatial")) {
 			tryCatch({
-				res = st_distance_cuspatial(x, y, method = if (is_longlat) "haversine" else "euclidean")
+				res = st_distance_cuda(x, y, method = if (is_longlat) "haversine" else "euclidean")
 			}, error = function(e) {
-				message(paste("cuSpatial execution error:", e$message))
+				message(paste("CUDA execution error:", e$message))
 				NULL
 			})
 		} else if (backend == "metal" && !is_longlat && exists("st_distance_metal", mode = "function")) {
